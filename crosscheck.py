@@ -135,8 +135,6 @@ def save_results_to_csv(results, filename="hasil_crosscheck.csv"):
 
 if __name__ == "__main__":
     businesses = load_businesses_from_file("bisnis.txt")
-    
-    # Parallel execution (max 5 browsers)
     results = crosscheck_business(businesses)
 
     for business_name, query, found in results:
