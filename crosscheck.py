@@ -6,7 +6,7 @@ import re
 from fuzzywuzzy import fuzz
 import csv
 
-def extract_title(html):
+def extract_list_view(html):
     return json.loads(
         html.split(";window.APP_INITIALIZATION_STATE=")[1].split(";window.APP_FLAGS")[0]
     )[5][3][2][1]
@@ -51,11 +51,11 @@ def scrape_place_title(request: Request, link, metadata):
     
     try:
         html = request.get(link, cookies=cookies, timeout=12).text
-        title = extract_title(html)
+        compared_name = extract_list_view(html)
         
-        if title:
-            is_found = validation(business_name, title)
-            return (link, title, is_found)
+        if compared_name:
+            is_found = validation(business_name, compared_name)
+            return (link, compared_name, is_found)
         return (link, None, False)
     except Exception as e:
         print(f"Error scraping {link}: {e}")
@@ -72,10 +72,10 @@ def crosscheck_business(driver: Driver, query):
     
     try:
         driver.google_get(search_url, accept_google_cookies=True)
-        h1_text = driver.get_text("h1")
+        compared_name = driver.get_text("h1")
         
         # Jika h1 berisi kata "hasil", ini halaman list view
-        if h1_text and ("hasil" in h1_text.lower() or "results" in h1_text.lower()):
+        if not compared_name or compared_name and ("hasil" in compared_name.lower() or "results" in compared_name.lower()):
             # Proses halaman list view
             links = driver.get_all_links('[role="feed"] > div > div > a')
             links = links[:5]
@@ -97,7 +97,7 @@ def crosscheck_business(driver: Driver, query):
             for i in range(0, len(results), 3):
                 if i+2 < len(results):  # Pastikan kita punya 3 elemen lengkap
                     link = results[i]
-                    title = results[i+1]
+                    compared_name = results[i+1]
                     is_found = results[i+2]
                     
                     if is_found:
@@ -107,7 +107,7 @@ def crosscheck_business(driver: Driver, query):
             return (business_name, query, False)
         else:
             # Proses halaman profile bisnis
-            is_found = validation(business_name, h1_text)
+            is_found = validation(business_name, compared_name)
             return (business_name, query, is_found)
             
     except Exception as e:
