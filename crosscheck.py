@@ -10,7 +10,7 @@ def extract_title(html):
     return json.loads(
         html.split(";window.APP_INITIALIZATION_STATE=")[1].split(";window.APP_FLAGS")[0]
     )[5][3][2][1]
-x
+
 # Fungsi untuk melakukan validasi kesamaan nama usaha
 def validation(business_name, compared_name):
     if not business_name or not compared_name:
