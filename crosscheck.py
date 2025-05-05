@@ -6,36 +6,59 @@ import re
 from fuzzywuzzy import fuzz
 import csv
 
+# Modifikasi untuk mengekstrak nama dan lokasi dari list view
 def extract_list_view(html):
-    return json.loads(
+    data_string = json.loads(
         html.split(";window.APP_INITIALIZATION_STATE=")[1].split(";window.APP_FLAGS")[0]
-    )[5][3][2][1]
+    )[9][0] # Target data nama dan alamat
 
-# Fungsi untuk melakukan validasi kesamaan nama usaha
-def validation(business_name, compared_name):
+    # Pisahkan nama dan alamat berdasarkan " · "
+    parts = data_string.split(" · ")
+    compared_name = parts[0].strip() if parts else None
+    address_text = parts[1].strip() if len(parts) > 1 else None
+
+    compared_location = None
+    if address_text:
+        # Ekstrak Kabupaten/Kota dari alamat
+        # Pola ini mencari "Kabupaten " atau "Kota " diikuti oleh nama lokasi sampai koma atau akhir string
+        loc_match = re.search(r'(?:Kabupaten|Kota)\s+([^\s,]+(?:\s+[^\s,]+)*)', address_text, re.IGNORECASE)
+        if loc_match:
+            compared_location = loc_match.group(1).strip()
+        
+    return compared_name, compared_location
+
+# Modifikasi fungsi validasi untuk memasukkan pengecekan lokasi
+def validation(business_name, compared_name, business_location, compared_location):
     if not business_name or not compared_name:
-        return False
-    
-    # Menghitung jumlah kata yang sama
-    words_in_business = set(re.findall(r'\b\w+\b', business_name.lower()))
-    words_in_compared = set(re.findall(r'\b\w+\b', compared_name.lower()))
-    common_words = len(words_in_business.intersection(words_in_compared))
-    
-    # Cek validasi dengan berbagai metode
-    if common_words >= 2:
-        return True
+        return False # Nama tidak boleh kosong
+
+    # Tahap 1: Validasi Nama
+    name_match = False
     
     # Cek fuzzy ratio
     ratio = fuzz.ratio(business_name.lower(), compared_name.lower())
     if ratio >= 75:
-        return True
-    
-    # Cek partial ratio
-    partial_ratio = fuzz.partial_ratio(business_name.lower(), compared_name.lower())
-    if partial_ratio >= 90:
-        return True
-    
-    return False
+        name_match = True
+    else:
+        # Cek partial ratio
+        partial_ratio = fuzz.partial_ratio(business_name.lower(), compared_name.lower())
+        if partial_ratio >= 90:
+            name_match = True
+
+    # Jika validasi nama gagal, langsung return False
+    if not name_match:
+        return False
+
+    # Tahap 2: Validasi Lokasi (hanya jika nama cocok)
+    if not business_location or not compared_location:
+        # Jika salah satu lokasi tidak ada, anggap tidak cocok (atau bisa diubah sesuai kebutuhan)
+        return False 
+        
+    # Cek apakah lokasi bisnis ada di dalam lokasi pembanding (case-insensitive)
+    if business_location.lower() in compared_location.lower():
+        return True # Nama cocok DAN Lokasi cocok
+
+    return False # Nama cocok TAPI Lokasi tidak cocok
 
 # Ekstrak nama usaha dari query
 def extract_business_name(query):
@@ -44,22 +67,37 @@ def extract_business_name(query):
         return match.group(1).strip()
     return query
 
+# Fungsi untuk mengekstrak lokasi (Kabupaten/Kota) dari query lengkap
+def extract_location_from_query(query):
+    # Pola ini mencari bagian setelah nama bisnis yang diawali "Kabupaten" atau "Kota"
+    loc_match = re.search(r'(?:Kabupaten|Kota)\s+(.+)', query, re.IGNORECASE)
+    if loc_match:
+        sub_loc_match = re.search(r'(?:Kabupaten|Kota)\s+([^\s,]+(?:\s+[^\s,]+)*)', query, re.IGNORECASE)
+        if sub_loc_match:
+            return sub_loc_match.group(1).strip()
+    return None # Jika format tidak sesuai
+
 @request(parallel=5, async_queue=True, max_retry=5, output=None)
 def scrape_place_title(request: Request, link, metadata):
     business_name = metadata["business_name"]
+    business_location = metadata["business_location"] 
     cookies = metadata["cookies"]
     
     try:
         html = request.get(link, cookies=cookies, timeout=12).text
-        compared_name = extract_list_view(html)
+        # Extract_list_view sekarang mengembalikan nama dan lokasi
+        compared_name, compared_location = extract_list_view(html) 
         
-        if compared_name:
-            is_found = validation(business_name, compared_name)
-            return (link, compared_name, is_found)
-        return (link, None, False)
+        if compared_name: # Cukup cek nama, validasi lengkap di fungsi validation
+            is_found = validation(business_name, compared_name, business_location, compared_location)
+            # Kembalikan 4 nilai
+            return (link, compared_name, compared_location, is_found) 
+        # Kembalikan 4 nilai meskipun gagal ekstrak
+        return (link, None, None, False) 
     except Exception as e:
         print(f"Error scraping {link}: {e}")
-        return (link, None, False)
+        # Kembalikan 4 nilai meskipun error
+        return (link, None, None, False) 
 
 @browser(block_images_and_css=True,
          output=None,
@@ -68,46 +106,68 @@ def scrape_place_title(request: Request, link, metadata):
          lang=Lang.Indonesian)
 def crosscheck_business(driver: Driver, query):
     business_name = extract_business_name(query)
+    # Ekstrak lokasi bisnis dari query awal
+    business_location = extract_location_from_query(query) 
     search_url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
     
     try:
         driver.google_get(search_url, accept_google_cookies=True)
-        compared_name = driver.get_text("h1")
         
-        # Jika h1 berisi kata "hasil", ini halaman list view
-        if not compared_name or compared_name and ("hasil" in compared_name.lower() or "results" in compared_name.lower()):
-            # Proses halaman list view
+        h1_text = ""
+        try: # Coba dapatkan H1 (nama usaha di halaman profil)
+            h1_text = driver.get_text("h1")
+        except Exception:
+            pass # Biarkan kosong jika tidak ada H1
+
+        # Cek apakah ini halaman list view atau profil
+        is_list_view = False
+        if not h1_text or ("hasil" in h1_text.lower() or "results" in h1_text.lower()):
+            is_list_view = True
+
+        if is_list_view:
+            # --- Proses Halaman List View ---
             links = driver.get_all_links('[role="feed"] > div > div > a')
             links = links[:5]
             
             if not links:
                 return (business_name, query, False)
             
-            # Proses link menggunakan request paralel
             scrape_place_obj: AsyncQueueResult = scrape_place_title()
             cookies = driver.get_cookies_dict()
             
-            # Tambahkan links ke antrian async
-            scrape_place_obj.put(links, metadata={"business_name": business_name, "cookies": cookies})
+            # Kirim business_location ke metadata
+            scrape_place_obj.put(links, metadata={"business_name": business_name, "business_location": business_location, "cookies": cookies}) 
             
-            # Dapatkan hasil
             results = scrape_place_obj.get()
 
-            # Proses results yang berupa list datar (setiap 3 elemen adalah satu hasil)
-            for i in range(0, len(results), 3):
-                if i+2 < len(results):  # Pastikan kita punya 3 elemen lengkap
+            # Proses results (list datar, sekarang 4 elemen per hasil)
+            for i in range(0, len(results), 4): # Iterasi per 4 elemen
+                if i+3 < len(results):  # Pastikan ada 4 elemen
                     link = results[i]
                     compared_name = results[i+1]
-                    is_found = results[i+2]
+                    compared_location = results[i+2]
+                    is_found = results[i+3] # Ambil status is_found
                     
+                    # Validasi ulang tidak perlu karena sudah dilakukan di scrape_place_title
                     if is_found:
                         return (business_name, query, True)
 
-            # Jika sampai di sini, tidak ada yang ditemukan
-            return (business_name, query, False)
+            return (business_name, query, False) # Tidak ditemukan di 5 link teratas
         else:
-            # Proses halaman profile bisnis
-            is_found = validation(business_name, compared_name)
+            # --- Proses Halaman Profile ---
+            compared_name = h1_text 
+            compared_location = None
+            # Ekstrak alamat dari halaman profil
+            address_selector = 'div[data-section-id="ad"] .Io6YTe' 
+            address_text = driver.get_text(address_selector)
+            if address_text:
+                 # Ekstrak Kabupaten/Kota dari alamat
+                loc_match = re.search(r'(?:Kabupaten|Kota)\s+([^\s,]+(?:\s+[^\s,]+)*)', address_text, re.IGNORECASE)
+                if loc_match:
+                    compared_location = loc_match.group(1).strip()
+
+            # Lakukan validasi lengkap (nama dan lokasi)
+            is_found = validation(business_name, compared_name, business_location, compared_location)
             return (business_name, query, is_found)
             
     except Exception as e:
@@ -164,7 +224,8 @@ if __name__ == "__main__":
         
         # Output log 
         status_code = "1" if result[2] else "0"
-        print(f"{status_code}   {business_name} {query.replace(business_name, '')}")
+        location_part = query.replace(business_name, '').strip() # Ambil bagian lokasi untuk log
+        print(f"{status_code}   {business_name} {location_part}") # Sesuaikan log jika perlu
     
     # Simpan hasil ke CSV
     save_results_to_csv(results)
