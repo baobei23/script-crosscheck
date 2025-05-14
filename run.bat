@@ -1,53 +1,74 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo Memeriksa instalasi Python...
+echo Memeriksa instalasi Python 3.10...
 
-where python >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo Python belum terinstall. Menginstall Python 3.10.4...
-    curl -o python-3.10.4-amd64.exe https://www.python.org/ftp/python/3.10.4/python-3.10.4-amd64.exe
-    python-3.10.4-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
-    del python-3.10.4-amd64.exe
+:: Cek apakah Python 3.10 sudah terinstall
+python --version 2>nul | findstr /r "3\.10\." >nul
+if %errorlevel% equ 0 (
+    echo Python 3.10 sudah terinstall.
+    set PYTHON_CMD=python
 ) else (
-    for /f "tokens=2" %%i in ('python -c "import sys; print(sys.version.split()[0])"') do set PYTHON_VERSION=%%i
-    echo Versi Python terinstall: !PYTHON_VERSION!
-    
-    for /f "tokens=1,2 delims=." %%a in ("!PYTHON_VERSION!") do (
-        set MAJOR_VERSION=%%a
-        set MINOR_VERSION=%%b
-    )
-    
-    if not "!MAJOR_VERSION!"=="3" (
-        set WRONG_VERSION=1
-    ) else if not "!MINOR_VERSION!"=="10" (
-        set WRONG_VERSION=1
+    :: Cek apakah py launcher dapat menemukan Python 3.10
+    py -3.10 --version 2>nul | findstr /r "3\.10\." >nul
+    if %errorlevel% equ 0 (
+        echo Python 3.10 ditemukan menggunakan py launcher.
+        set PYTHON_CMD=py -3.10
     ) else (
-        set WRONG_VERSION=0
-    )
-    
-    if !WRONG_VERSION! equ 1 (
-        echo Python 3.10 diperlukan, menghapus versi saat ini dan menginstall Python 3.10.4...
+        echo Python 3.10 tidak ditemukan.
+        echo Mengunduh dan menginstal Python 3.10.4...
         
-        for /f "tokens=2 delims=:" %%a in ('wmic product where "name like 'Python%%'" get name /value ^| find "="') do (
-            echo Menghapus %%a...
-            wmic product where "name='%%a'" call uninstall /nointeractive
+        :: Unduh Python 3.10.4 installer
+        curl -L -o python-3.10.4.exe https://www.python.org/ftp/python/3.10.4/python-3.10.4-amd64.exe
+        
+        if not exist python-3.10.4.exe (
+            echo Gagal mengunduh Python 3.10.4. Silakan instal secara manual.
+            pause
+            exit /b 1
         )
         
-        echo Menginstall Python 3.10.4...
-        curl -o python-3.10.4-amd64.exe https://www.python.org/ftp/python/3.10.4/python-3.10.4-amd64.exe
-        python-3.10.4-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
-        del python-3.10.4-amd64.exe
+        :: Instal Python 3.10.4 (dengan menambahkan ke PATH, dan pip)
+        echo Menginstal Python 3.10.4...
+        python-3.10.4.exe /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
+        
+        :: Hapus installer setelah instalasi
+        del python-3.10.4.exe
+        
+        :: Tentukan command yang akan digunakan
+        set PYTHON_CMD=python
+        
+        :: Verifikasi instalasi
+        %PYTHON_CMD% --version 2>nul | findstr /r "3\.10\." >nul
+        if %errorlevel% neq 0 (
+            echo Instalasi Python 3.10.4 gagal. Silakan instal secara manual.
+            pause
+            exit /b 1
+        )
     )
 )
 
-echo Memastikan pip tersedia...
-python -m ensurepip --upgrade
+echo Menggunakan: %PYTHON_CMD%
+echo.
 
-echo Menginstall paket yang diperlukan dari requirements.txt...
-pip install -r requirements.txt
+:: Cek apakah requirements.txt ada
+if exist requirements.txt (
+    echo Menginstal paket-paket yang diperlukan dari requirements.txt...
+    %PYTHON_CMD% -m pip install -r requirements.txt
+    if %errorlevel% neq 0 (
+        echo Gagal menginstal paket-paket. Silakan coba lagi.
+        pause
+        exit /b 1
+    )
+) else (
+    echo File requirements.txt tidak ditemukan.
+)
 
-echo Menjalankan aplikasi...
-python main.py
+:: Cek apakah main.py ada
+if exist main.py (
+    echo Menjalankan main.py...
+    %PYTHON_CMD% main.py
+) else (
+    echo File main.py tidak ditemukan.
+)
 
-endlocal
+pause
