@@ -116,7 +116,8 @@ def scrape_place_title(request: Request, link, metadata):
          #headless=True,
          output=None,
          wait_for_complete_page_load=True,
-         lang=Lang.Indonesian)
+         lang=Lang.Indonesian,
+         cache=True)
 def crosscheck_business(driver: Driver, query):
     # Dapatkan nama dan lokasi dari query awal
     business_name, business_location = extract_business_name(query) 
