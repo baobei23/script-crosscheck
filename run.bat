@@ -1,21 +1,21 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo Memeriksa instalasi Python 3.10...
+echo Memeriksa instalasi Python 3.10.4...
 
-:: Cek apakah Python 3.10 sudah terinstall
-python --version 2>nul | findstr /r "3\.10\." >nul
+:: Cek apakah Python 3.10.4 sudah terinstall
+python --version 2>nul | findstr /r "3\.10\.4" >nul
 if %errorlevel% equ 0 (
-    echo Python 3.10 sudah terinstall.
+    echo Python 3.10.4 sudah terinstall.
     set PYTHON_CMD=python
 ) else (
-    :: Cek apakah py launcher dapat menemukan Python 3.10
-    py -3.10 --version 2>nul | findstr /r "3\.10\." >nul
+    :: Cek apakah py launcher dapat menemukan Python 3.10.4
+    py -3.10 --version 2>nul | findstr /r "3\.10\.4" >nul
     if %errorlevel% equ 0 (
-        echo Python 3.10 ditemukan menggunakan py launcher.
+        echo Python 3.10.4 ditemukan menggunakan py launcher.
         set PYTHON_CMD=py -3.10
     ) else (
-        echo Python 3.10 tidak ditemukan.
+        echo Python 3.10.4 tidak ditemukan.
         echo Mengunduh dan menginstal Python 3.10.4...
         
         :: Unduh Python 3.10.4 installer
@@ -38,12 +38,13 @@ if %errorlevel% equ 0 (
         set PYTHON_CMD=python
         
         :: Verifikasi instalasi
-        %PYTHON_CMD% --version 2>nul | findstr /r "3\.10\." >nul
+        %PYTHON_CMD% --version 2>nul | findstr /r "3\.10\.4" >nul
         if %errorlevel% neq 0 (
             echo Instalasi Python 3.10.4 gagal. Silakan instal secara manual.
             pause
             exit /b 1
         )
+        echo Python 3.10.4 berhasil diinstal.
     )
 )
 
@@ -59,9 +60,11 @@ if exist requirements.txt (
         pause
         exit /b 1
     )
+    echo Paket-paket berhasil diinstal.
 ) else (
-    echo File requirements.txt tidak ditemukan.
+    echo File requirements.txt tidak ditemukan. Lewati instalasi paket.
 )
+echo.
 
 :: Cek apakah main.py ada
 if exist main.py (
@@ -71,4 +74,6 @@ if exist main.py (
     echo File main.py tidak ditemukan.
 )
 
+echo.
+echo Skrip selesai.
 pause
