@@ -1,3 +1,17 @@
+import subprocess
+import sys
+
+def install_requirements():
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        print("Requirements installed successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing requirements: {e}")
+        sys.exit(1)
+
+# Install requirements before importing other modules
+install_requirements()
+
 from botasaurus.browser import browser, Driver, AsyncQueueResult
 from botasaurus.request import request, Request
 from botasaurus.lang import Lang
